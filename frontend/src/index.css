@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338CA;
+  --color-secondary: #EC4899;
+  --color-accent: #8B5CF6;
+}
+
+/* Shadcn variables will be injected here automatically by shadcn init */
