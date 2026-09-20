@@ -1,33 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, Plus, Search, MoreVertical, Shield } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { Users, Plus, Search, MoreVertical, Shield, Trash2, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/Dialog';
 import { Label } from '@/components/ui/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
+import StatusBadge from '@/components/ui/StatusBadge';
 
 const Residents = () => {
   const [residents, setResidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const toast = useToast();
   
   // Modal State
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'Resident', flatNumber: '', block: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'Resident', unitNumber: '', phone: '' });
   const [submitting, setSubmitting] = useState(false);
+
+  // Action menu
+  const [activeMenu, setActiveMenu] = useState(null);
 
   useEffect(() => {
     fetchResidents();
   }, []);
 
+  // Close menu on outside click
+  useEffect(() => {
+    const handleClick = () => setActiveMenu(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
   const fetchResidents = async () => {
     try {
-      const res = await axios.get('/api/users');
+      const res = await axios.get('/api/v1/users');
       setResidents(res.data.data);
     } catch (error) {
       console.error('Error fetching residents:', error);
+      toast.error('Failed to load residents');
     } finally {
       setLoading(false);
     }
@@ -37,16 +53,32 @@ const Residents = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      // API Call will go here
-      // await axios.post('/api/users', formData);
-      console.log('Submitting new resident:', formData);
+      await axios.post('/api/v1/auth/register', {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        unitNumber: formData.unitNumber,
+        phone: formData.phone,
+      });
+      toast.success('Resident added successfully!');
       setIsAddOpen(false);
-      setFormData({ name: '', email: '', password: '', role: 'Resident', flatNumber: '', block: '' });
-      fetchResidents(); // Refresh list
+      setFormData({ name: '', email: '', password: '', role: 'Resident', unitNumber: '', phone: '' });
+      fetchResidents();
     } catch (error) {
-      console.error('Error adding resident:', error);
+      toast.error(error.response?.data?.error || 'Failed to add resident');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleToggleStatus = async (userId, currentStatus) => {
+    try {
+      await axios.put(`/api/v1/users/${userId}`, { isActive: !currentStatus });
+      toast.success(`User ${currentStatus ? 'deactivated' : 'activated'} successfully`);
+      fetchResidents();
+    } catch (error) {
+      toast.error('Failed to update user status');
     }
   };
 
@@ -56,7 +88,7 @@ const Residents = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -65,7 +97,7 @@ const Residents = () => {
           </h2>
           <p className="text-slate-500 mt-1">Manage all users registered in your society.</p>
         </div>
-        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setIsAddOpen(true)}>
+        <Button className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-md" onClick={() => setIsAddOpen(true)}>
           <Plus size={18} className="mr-2" />
           Add Resident
         </Button>
@@ -77,7 +109,7 @@ const Residents = () => {
             <DialogHeader>
               <DialogTitle>Add New Resident</DialogTitle>
               <DialogDescription>
-                Register a new resident or admin to the society portal.
+                Register a new resident or staff member to the society portal.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -93,7 +125,9 @@ const Residents = () => {
                     <SelectContent>
                       <SelectItem value="Resident">Resident</SelectItem>
                       <SelectItem value="Society Admin">Society Admin</SelectItem>
-                      <SelectItem value="Guard">Security Guard</SelectItem>
+                      <SelectItem value="Security Guard">Security Guard</SelectItem>
+                      <SelectItem value="Maintenance">Maintenance</SelectItem>
+                      <SelectItem value="Accountant">Accountant</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -106,23 +140,23 @@ const Residents = () => {
               
               <div className="grid gap-2">
                 <Label htmlFor="password">Temporary Password</Label>
-                <Input id="password" type="password" required value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} placeholder="********" />
+                <Input id="password" type="password" required value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} placeholder="Min 6 characters" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="flatNumber">Flat Number</Label>
-                  <Input id="flatNumber" required value={formData.flatNumber} onChange={(e) => setFormData({...formData, flatNumber: e.target.value})} placeholder="e.g. 101" />
+                  <Label htmlFor="unitNumber">Unit / Flat Number</Label>
+                  <Input id="unitNumber" value={formData.unitNumber} onChange={(e) => setFormData({...formData, unitNumber: e.target.value})} placeholder="e.g. 101" />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="block">Block (Optional)</Label>
-                  <Input id="block" value={formData.block} onChange={(e) => setFormData({...formData, block: e.target.value})} placeholder="e.g. A" />
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} placeholder="03001234567" />
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-700">
+              <Button type="submit" disabled={submitting} className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700">
                 {submitting ? 'Adding...' : 'Add Resident'}
               </Button>
             </DialogFooter>
@@ -130,9 +164,9 @@ const Residents = () => {
         </DialogContent>
       </Dialog>
 
-      <Card className="border-slate-100 shadow-sm">
-        <div className="p-4 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50 rounded-t-xl">
-          <div className="relative flex-1 max-w-md">
+      <Card className="border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-50/50 rounded-t-xl">
+          <div className="relative flex-1 w-full sm:max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <Input 
               type="text" 
@@ -142,13 +176,22 @@ const Residents = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <span className="text-sm text-slate-500 font-medium">
+            {filteredResidents.length} {filteredResidents.length === 1 ? 'resident' : 'residents'}
+          </span>
         </div>
         
         <CardContent className="p-0">
           {loading ? (
-            <div className="p-8 text-center text-slate-500">Loading residents...</div>
+            <LoadingSkeleton variant="table" rows={5} cols={5} />
           ) : filteredResidents.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">No residents found.</div>
+            <EmptyState
+              icon={Users}
+              title="No residents found"
+              description={search ? 'Try adjusting your search query.' : 'Add your first resident to get started.'}
+              action={!search ? () => setIsAddOpen(true) : undefined}
+              actionLabel="Add Resident"
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-600">
@@ -156,7 +199,7 @@ const Residents = () => {
                   <tr>
                     <th className="px-6 py-4">Name</th>
                     <th className="px-6 py-4">Contact</th>
-                    <th className="px-6 py-4">Unit / Block</th>
+                    <th className="px-6 py-4">Unit</th>
                     <th className="px-6 py-4">Role</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4 text-right">Actions</th>
@@ -167,7 +210,7 @@ const Residents = () => {
                     <tr key={user._id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-violet-400 text-white flex items-center justify-center font-bold text-sm">
                             {user.name.charAt(0).toUpperCase()}
                           </div>
                           <span className="font-medium text-slate-800">{user.name}</span>
@@ -176,11 +219,11 @@ const Residents = () => {
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
                           <span>{user.email}</span>
-                          <span className="text-slate-400 text-xs">{user.phone}</span>
+                          <span className="text-slate-400 text-xs">{user.phone || '—'}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        {user.flatNumber} {user.block && `(Block ${user.block})`}
+                        {user.unitNumber || '—'}
                       </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
@@ -189,14 +232,30 @@ const Residents = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                          Active
-                        </span>
+                        <StatusBadge status={user.isActive !== false ? 'Active' : 'Inactive'} />
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <Button variant="ghost" size="icon" className="text-slate-400 hover:text-indigo-600">
-                          <MoreVertical size={18} />
-                        </Button>
+                        <div className="relative inline-block">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-slate-400 hover:text-indigo-600"
+                            onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === user._id ? null : user._id); }}
+                          >
+                            <MoreVertical size={18} />
+                          </Button>
+                          {activeMenu === user._id && (
+                            <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-50 animate-slide-down">
+                              <button
+                                onClick={() => handleToggleStatus(user._id, user.isActive !== false)}
+                                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                              >
+                                <Edit2 size={14} />
+                                {user.isActive !== false ? 'Deactivate' : 'Activate'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -1,20 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { UserCheck, Plus, Search, LogIn, LogOut, Phone } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { AuthContext } from '../context/AuthContext';
+import { UserCheck, Plus, Search, Phone, LogOut as LogOutIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/Dialog';
 import { Label } from '@/components/ui/Label';
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
+import StatusBadge from '@/components/ui/StatusBadge';
 
 const Visitors = () => {
   const [visitors, setVisitors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const toast = useToast();
+  const { user } = useContext(AuthContext);
 
   // Modal State
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [formData, setFormData] = useState({ name: '', phone: '', visitingFlat: '', purpose: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', purpose: '' });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -23,10 +30,11 @@ const Visitors = () => {
 
   const fetchVisitors = async () => {
     try {
-      const res = await axios.get('/api/visitors');
+      const res = await axios.get('/api/v1/visitors');
       setVisitors(res.data.data);
     } catch (error) {
       console.error('Error fetching visitors:', error);
+      toast.error('Failed to load visitor logs');
     } finally {
       setLoading(false);
     }
@@ -36,15 +44,39 @@ const Visitors = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      // await axios.post('/api/visitors', formData);
-      console.log('Logging visitor:', formData);
+      await axios.post('/api/v1/visitors', {
+        name: formData.name,
+        phone: formData.phone,
+        purpose: formData.purpose || 'General Visit',
+      });
+      toast.success('Visitor logged successfully!');
       setIsAddOpen(false);
-      setFormData({ name: '', phone: '', visitingFlat: '', purpose: '' });
+      setFormData({ name: '', phone: '', purpose: '' });
       fetchVisitors();
     } catch (error) {
-      console.error('Error logging visitor:', error);
+      toast.error(error.response?.data?.error || 'Failed to log visitor');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCheckout = async (visitorId) => {
+    try {
+      await axios.put(`/api/v1/visitors/${visitorId}/status`, { status: 'CheckedOut' });
+      toast.success('Visitor checked out successfully!');
+      fetchVisitors();
+    } catch (error) {
+      toast.error('Failed to check out visitor');
+    }
+  };
+
+  const handleCheckIn = async (visitorId) => {
+    try {
+      await axios.put(`/api/v1/visitors/${visitorId}/status`, { status: 'CheckedIn' });
+      toast.success('Visitor checked in!');
+      fetchVisitors();
+    } catch (error) {
+      toast.error('Failed to check in visitor');
     }
   };
 
@@ -53,8 +85,11 @@ const Visitors = () => {
     visitor.phone.includes(search)
   );
 
+  const isGuard = user?.role === 'Security Guard';
+  const isAdmin = user?.role === 'Society Admin';
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -63,7 +98,7 @@ const Visitors = () => {
           </h2>
           <p className="text-slate-500 mt-1">Manage society entry and exit logs.</p>
         </div>
-        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setIsAddOpen(true)}>
+        <Button className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-md" onClick={() => setIsAddOpen(true)}>
           <Plus size={18} className="mr-2" />
           Log Visitor
         </Button>
@@ -89,20 +124,15 @@ const Visitors = () => {
                   <Input id="phone" required value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} placeholder="03001234567" />
                 </div>
               </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="visitingFlat">Visiting Flat</Label>
-                <Input id="visitingFlat" required value={formData.visitingFlat} onChange={(e) => setFormData({...formData, visitingFlat: e.target.value})} placeholder="e.g. 204" />
-              </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="purpose">Purpose of Visit</Label>
-                <Input id="purpose" value={formData.purpose} onChange={(e) => setFormData({...formData, purpose: e.target.value})} placeholder="e.g. Delivery, Guest" />
+                <Input id="purpose" required value={formData.purpose} onChange={(e) => setFormData({...formData, purpose: e.target.value})} placeholder="e.g. Delivery, Guest, Maintenance" />
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-700">
+              <Button type="submit" disabled={submitting} className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700">
                 {submitting ? 'Logging...' : 'Log Entry'}
               </Button>
             </DialogFooter>
@@ -110,9 +140,9 @@ const Visitors = () => {
         </DialogContent>
       </Dialog>
 
-      <Card className="border-slate-100 shadow-sm">
-        <div className="p-4 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50 rounded-t-xl">
-          <div className="relative flex-1 max-w-md">
+      <Card className="border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-50/50 rounded-t-xl">
+          <div className="relative flex-1 w-full sm:max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <Input 
               type="text" 
@@ -122,63 +152,93 @@ const Visitors = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <span className="text-sm text-slate-500 font-medium">
+            {filteredVisitors.length} {filteredVisitors.length === 1 ? 'entry' : 'entries'}
+          </span>
         </div>
         
         <CardContent className="p-0">
           {loading ? (
-            <div className="p-8 text-center text-slate-500">Loading visitor logs...</div>
+            <LoadingSkeleton variant="table" rows={5} cols={5} />
           ) : filteredVisitors.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">No visitors found.</div>
+            <EmptyState
+              icon={UserCheck}
+              title="No visitors logged"
+              description={search ? 'Try adjusting your search query.' : 'Start by logging a new visitor.'}
+              action={!search ? () => setIsAddOpen(true) : undefined}
+              actionLabel="Log Visitor"
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-600">
                 <thead className="bg-slate-50/50 text-slate-500 font-medium border-b border-slate-100">
                   <tr>
                     <th className="px-6 py-4">Visitor Details</th>
-                    <th className="px-6 py-4">Visiting Flat</th>
                     <th className="px-6 py-4">Purpose</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Time</th>
+                    {(isGuard || isAdmin) && <th className="px-6 py-4 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredVisitors.map((v) => (
                     <tr key={v._id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-medium text-slate-800">{v.name}</span>
-                          <span className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                            <Phone size={12} /> {v.phone}
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-400 text-white flex items-center justify-center font-bold text-sm">
+                            {v.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-slate-800">{v.name}</span>
+                            <span className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Phone size={11} /> {v.phone}
+                            </span>
+                          </div>
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium">Flat {v.visitingFlat}</span>
                       </td>
                       <td className="px-6 py-4">{v.purpose || 'General'}</td>
                       <td className="px-6 py-4">
-                        {v.status === 'Checked In' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                            <LogIn size={12} /> Inside
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                            <LogOut size={12} /> Checked Out
-                          </span>
-                        )}
+                        <StatusBadge status={v.status} />
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          <span className="text-xs">
-                            <strong className="text-slate-500">In:</strong> {new Date(v.checkInTime).toLocaleString()}
-                          </span>
-                          {v.checkOutTime && (
+                          {v.entryTime && (
                             <span className="text-xs">
-                              <strong className="text-slate-500">Out:</strong> {new Date(v.checkOutTime).toLocaleString()}
+                              <strong className="text-slate-500">In:</strong> {new Date(v.entryTime).toLocaleString()}
                             </span>
+                          )}
+                          {v.exitTime && (
+                            <span className="text-xs">
+                              <strong className="text-slate-500">Out:</strong> {new Date(v.exitTime).toLocaleString()}
+                            </span>
+                          )}
+                          {!v.entryTime && !v.exitTime && (
+                            <span className="text-xs text-slate-400">{new Date(v.createdAt).toLocaleString()}</span>
                           )}
                         </div>
                       </td>
+                      {(isGuard || isAdmin) && (
+                        <td className="px-6 py-4 text-right">
+                          {v.status === 'Approved' && (
+                            <Button variant="outline" size="sm" className="text-xs hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300" onClick={() => handleCheckIn(v._id)}>
+                              Check In
+                            </Button>
+                          )}
+                          {v.status === 'CheckedIn' && (
+                            <Button variant="outline" size="sm" className="text-xs hover:bg-slate-100" onClick={() => handleCheckout(v._id)}>
+                              <LogOutIcon size={14} className="mr-1" />
+                              Check Out
+                            </Button>
+                          )}
+                          {v.status === 'Pending' && isAdmin && (
+                            <div className="flex gap-2 justify-end">
+                              <Button variant="outline" size="sm" className="text-xs hover:bg-emerald-50 hover:text-emerald-700" onClick={() => handleCheckIn(v._id)}>
+                                Approve & In
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

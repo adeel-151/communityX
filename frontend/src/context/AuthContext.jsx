@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 export const AuthContext = createContext();
@@ -9,7 +9,21 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Configure Axios defaults
-  axios.defaults.baseURL = 'http://localhost:5000'; // Change in prod
+  axios.defaults.baseURL = 'http://localhost:5000';
+
+  // Axios interceptor for 401 responses — auto-logout on expired/invalid token
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401 && token) {
+          logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptor);
+  }, [token]);
 
   useEffect(() => {
     if (token) {
@@ -26,7 +40,7 @@ export const AuthProvider = ({ children }) => {
 
   const fetchUser = async () => {
     try {
-      const res = await axios.get('/api/auth/me');
+      const res = await axios.get('/api/v1/auth/me');
       setUser(res.data.data);
     } catch (error) {
       console.error('Error fetching user:', error);
@@ -37,22 +51,22 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (email, password) => {
-    const res = await axios.post('/api/auth/login', { email, password });
+    const res = await axios.post('/api/v1/auth/login', { email, password });
     setToken(res.data.token);
     setUser(res.data.user);
     return res.data;
   };
 
   const register = async (userData) => {
-    const res = await axios.post('/api/auth/register', userData);
+    const res = await axios.post('/api/v1/auth/register', userData);
     setToken(res.data.token);
     setUser(res.data.user);
     return res.data;
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setToken(null);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>

@@ -1,20 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import { Bell, Plus, Pin, Calendar, User } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { AuthContext } from '../context/AuthContext';
+import { Bell, Plus, Calendar, User, Trash2, AlertCircle, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/Dialog';
 import { Label } from '@/components/ui/Label';
 import { Input } from '@/components/ui/Input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton';
+import EmptyState from '@/components/ui/EmptyState';
+import StatusBadge from '@/components/ui/StatusBadge';
 
 const Notices = () => {
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const toast = useToast();
+  const { user } = useContext(AuthContext);
 
   // Modal State
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [formData, setFormData] = useState({ title: '', content: '', validUntil: '', isPinned: false });
+  const [formData, setFormData] = useState({ title: '', content: '', expiresAt: '', priority: 'Normal' });
   const [submitting, setSubmitting] = useState(false);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const isAdmin = user?.role === 'Society Admin';
 
   useEffect(() => {
     fetchNotices();
@@ -22,10 +35,11 @@ const Notices = () => {
 
   const fetchNotices = async () => {
     try {
-      const res = await axios.get('/api/notices');
+      const res = await axios.get('/api/v1/notices');
       setNotices(res.data.data);
     } catch (error) {
       console.error('Error fetching notices:', error);
+      toast.error('Failed to load notices');
     } finally {
       setLoading(false);
     }
@@ -35,20 +49,46 @@ const Notices = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      // await axios.post('/api/notices', formData);
-      console.log('Creating notice:', formData);
+      await axios.post('/api/v1/notices', {
+        title: formData.title,
+        content: formData.content,
+        expiresAt: formData.expiresAt || undefined,
+        priority: formData.priority,
+      });
+      toast.success('Notice posted successfully!');
       setIsAddOpen(false);
-      setFormData({ title: '', content: '', validUntil: '', isPinned: false });
+      setFormData({ title: '', content: '', expiresAt: '', priority: 'Normal' });
       fetchNotices();
     } catch (error) {
-      console.error('Error creating notice:', error);
+      toast.error(error.response?.data?.error || 'Failed to create notice');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await axios.delete(`/api/v1/notices/${deleteTarget}`);
+      toast.success('Notice deleted');
+      setDeleteTarget(null);
+      fetchNotices();
+    } catch (error) {
+      toast.error('Failed to delete notice');
+    }
+  };
+
+  const priorityAccent = (priority) => {
+    switch (priority) {
+      case 'High': return 'border-l-4 border-l-red-500';
+      case 'Normal': return 'border-l-4 border-l-blue-500';
+      case 'Low': return 'border-l-4 border-l-slate-300';
+      default: return '';
+    }
+  };
+
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -57,12 +97,15 @@ const Notices = () => {
           </h2>
           <p className="text-slate-500 mt-1">Important announcements and society updates.</p>
         </div>
-        <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setIsAddOpen(true)}>
-          <Plus size={18} className="mr-2" />
-          Create Notice
-        </Button>
+        {isAdmin && (
+          <Button className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-md" onClick={() => setIsAddOpen(true)}>
+            <Plus size={18} className="mr-2" />
+            Create Notice
+          </Button>
+        )}
       </div>
 
+      {/* Create Notice Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <form onSubmit={handleAddSubmit}>
@@ -90,26 +133,27 @@ const Notices = () => {
                 />
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-start gap-4">
                 <div className="grid gap-2 flex-1">
-                  <Label htmlFor="validUntil">Valid Until</Label>
-                  <Input id="validUntil" type="date" required value={formData.validUntil} onChange={(e) => setFormData({...formData, validUntil: e.target.value})} />
+                  <Label htmlFor="expiresAt">Expires On (Optional)</Label>
+                  <Input id="expiresAt" type="date" value={formData.expiresAt} onChange={(e) => setFormData({...formData, expiresAt: e.target.value})} />
                 </div>
-                <div className="flex items-center gap-2 mt-6">
-                  <input 
-                    type="checkbox" 
-                    id="isPinned" 
-                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    checked={formData.isPinned}
-                    onChange={(e) => setFormData({...formData, isPinned: e.target.checked})}
-                  />
-                  <Label htmlFor="isPinned" className="cursor-pointer">Pin to Top</Label>
+                <div className="grid gap-2 flex-1">
+                  <Label htmlFor="priority">Priority</Label>
+                  <Select value={formData.priority} onValueChange={(val) => setFormData({...formData, priority: val})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Low">Low</SelectItem>
+                      <SelectItem value="Normal">Normal</SelectItem>
+                      <SelectItem value="High">High</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-700">
+              <Button type="submit" disabled={submitting} className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700">
                 {submitting ? 'Posting...' : 'Post Notice'}
               </Button>
             </DialogFooter>
@@ -117,36 +161,81 @@ const Notices = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 size={20} />
+              Delete Notice
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this notice? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notices List */}
       <div className="space-y-4 mt-6">
         {loading ? (
-          <div className="p-8 text-center text-slate-500 bg-white rounded-xl shadow-sm border border-slate-100">Loading notices...</div>
+          <LoadingSkeleton variant="notices" count={3} />
         ) : notices.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col items-center">
-            <Bell size={48} className="text-slate-300 mb-4" />
-            <p className="text-lg font-medium text-slate-700">No active notices.</p>
-            <p className="text-sm">When announcements are made, they will appear here.</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
+            <EmptyState
+              icon={Bell}
+              title="No active notices"
+              description="When announcements are made, they will appear here."
+              action={isAdmin ? () => setIsAddOpen(true) : undefined}
+              actionLabel="Create Notice"
+            />
           </div>
         ) : (
-          notices.map((notice) => (
-            <Card key={notice._id} className="border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
-              {notice.isPinned && (
-                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-pink-500 to-transparent">
-                  <Pin className="absolute top-2 right-2 text-white" size={16} />
+          notices.map((notice, i) => (
+            <Card
+              key={notice._id}
+              className={`border-slate-100 shadow-sm hover:shadow-md transition-all overflow-hidden animate-fade-in-up ${priorityAccent(notice.priority)}`}
+              style={{ animationDelay: `${i * 80}ms` }}
+            >
+              {/* Priority badge for High */}
+              {notice.priority === 'High' && (
+                <div className="bg-red-50 px-5 py-2 flex items-center gap-2">
+                  <AlertCircle size={14} className="text-red-500" />
+                  <span className="text-xs font-semibold text-red-600 uppercase tracking-wider">High Priority</span>
                 </div>
               )}
               
               <CardHeader className="pb-3 border-b border-slate-50 bg-slate-50/30">
-                <CardTitle className="text-lg text-slate-800 flex items-center gap-2">
-                  {notice.title}
-                </CardTitle>
-                <div className="flex items-center gap-4 text-xs text-slate-500 mt-2">
+                <div className="flex items-start justify-between">
+                  <CardTitle className="text-lg text-slate-800">{notice.title}</CardTitle>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-slate-400 hover:text-red-500 -mr-2"
+                      onClick={() => setDeleteTarget(notice._id)}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-xs text-slate-500 mt-2 flex-wrap">
                   <span className="flex items-center gap-1"><Calendar size={14} /> {new Date(notice.createdAt).toLocaleDateString()}</span>
-                  <span className="flex items-center gap-1"><User size={14} /> {notice.createdBy?.name || 'Admin'}</span>
-                  <span className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full font-medium">Valid till: {new Date(notice.validUntil).toLocaleDateString()}</span>
+                  <span className="flex items-center gap-1"><User size={14} /> {notice.authorId?.name || 'Admin'}</span>
+                  <StatusBadge status={notice.priority || 'Normal'} />
+                  {notice.expiresAt && (
+                    <span className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full font-medium">
+                      Expires: {new Date(notice.expiresAt).toLocaleDateString()}
+                    </span>
+                  )}
                 </div>
               </CardHeader>
               
-              <CardContent className="p-5 text-slate-600 whitespace-pre-wrap leading-relaxed">
+              <CardContent className="p-5 text-slate-600 whitespace-pre-wrap leading-relaxed text-sm">
                 {notice.content}
               </CardContent>
             </Card>
